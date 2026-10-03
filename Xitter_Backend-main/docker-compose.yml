@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # -------------------------------------------------------------
+  # PostgreSQL: Primary Relational Data Store
+  # -------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: twitter_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: twitter_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./internal/db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d twitter_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------------
+  # Redis Instance 1: Dedicated Session Storage
+  # Isolation Rationale: Sessions must NEVER be evicted by query
+  # cache pressure. Configured with default noeviction policy and
+  # persistent append-only storage.
+  # -------------------------------------------------------------
+  redis-session:
+    image: redis:7-alpine
+    container_name: twitter_redis_session
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory-policy noeviction
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_session_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------------
+  # Redis Instance 2: Dedicated LRU Query Cache
+  # Isolation Rationale: High query throughput, strictly bounded
+  # memory footprint (256mb) with LRU eviction. When full, least
+  # recently accessed query results are purged without logging out
+  # any authenticated users.
+  # -------------------------------------------------------------
+  redis-cache:
+    image: redis:7-alpine
+    container_name: twitter_redis_cache
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly no
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_cache_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------------
+  # Go Backend Application
+  # -------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: twitter_api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      ENV: development
+      DATABASE_URL: postgres://postgres:postgrespassword@postgres:5432/twitter_db?sslmode=disable
+      REDIS_SESSION_URL: redis://redis-session:6379/0
+      REDIS_CACHE_URL: redis://redis-cache:6379/0
+      ENABLE_DEV_AUTH: "true"
+      SESSION_TTL_HOURS: 168
+      COOKIE_NAME: twitter_session
+      COOKIE_SECURE: "false"
+      COOKIE_SAME_SITE: lax
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis-session:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_session_data:
+  redis_cache_data:

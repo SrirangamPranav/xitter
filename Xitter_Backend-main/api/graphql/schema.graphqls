@@ -1,0 +1,85 @@
+type User {
+  id: ID!
+  email: String!
+  handle: String!
+  displayName: String!
+  avatarUrl: String!
+  bio: String!
+  followersCount: Int!
+  followingCount: Int!
+  isFollowing: Boolean!
+  createdAt: String!
+}
+
+type Tweet {
+  id: ID!
+  author: User!
+  content: String!
+  parentTweet: Tweet
+  likesCount: Int!
+  repliesCount: Int!
+  retweetsCount: Int!
+  hasLiked: Boolean!
+  createdAt: String!
+  updatedAt: String!
+}
+
+type TweetEdge {
+  node: Tweet!
+  cursor: String!
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  endCursor: String
+}
+
+type TweetConnection {
+  edges: [TweetEdge!]!
+  pageInfo: PageInfo!
+}
+
+type TweetLikeEvent {
+  tweetId: ID!
+  userId: ID!
+  likesCount: Int!
+}
+
+input CreateTweetInput {
+  content: String!
+  parentTweetId: ID
+}
+
+input UpdateProfileInput {
+  displayName: String
+  bio: String
+  avatarUrl: String
+}
+
+type Query {
+  me: User
+  user(id: ID, handle: String): User
+  tweet(id: ID!): Tweet
+  feed(limit: Int = 20, cursor: String): TweetConnection!
+  userTweets(userId: ID!, limit: Int = 20, cursor: String): TweetConnection!
+  tweetReplies(tweetId: ID!, limit: Int = 20, cursor: String): TweetConnection!
+  searchUsers(query: String!, limit: Int = 10): [User!]!
+}
+
+type Mutation {
+  createTweet(input: CreateTweetInput!): Tweet!
+  deleteTweet(id: ID!): Boolean!
+  likeTweet(tweetId: ID!): Tweet!
+  unlikeTweet(tweetId: ID!): Tweet!
+  followUser(userId: ID!): Boolean!
+  unfollowUser(userId: ID!): Boolean!
+  updateProfile(input: UpdateProfileInput!): User!
+  logout: Boolean!
+  revokeAllSessions: Boolean!
+}
+
+type Subscription {
+  tweetAdded(authorId: ID): Tweet!
+  feedUpdated: Tweet!
+  tweetLiked(tweetId: ID!): TweetLikeEvent!
+}
